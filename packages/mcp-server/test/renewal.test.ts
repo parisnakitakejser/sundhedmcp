@@ -305,10 +305,20 @@ test("the dashboard says how the session is doing", async () => {
   });
   assert.match(live, /Logged in since .*\(42 min\)/);
   assert.match(live, /Resumed after a restart/);
-  assert.match(live, /every 4 min/);
   assert.match(live, /Login kept for restarts: yes, last stored/);
   const out = sessionDetails("da", { browserOpen: false, loggedIn: false, lastEnded: { at: "2026-03-01T10:00:00Z", minutes: 120 } });
   assert.match(out, /nej \(slået fra/);
   assert.match(out, /efter 120 min/);
   assert.doesNotMatch(out, /keep-alive/);
+});
+
+test("every record page says at the top when the session was last renewed, and about when next", async () => {
+  const { sessionBar } = await import("../src/dashboard.ts");
+  const bar = sessionBar("da", { browserOpen: true, loggedIn: true, since: "2026-03-01T08:00:00Z", lastKeepAliveAt: "2026-03-01T08:40:00Z", nextKeepAliveAt: "2026-03-01T08:44:00Z", keepAliveEveryMinutes: 4 });
+  // Copenhagen is UTC+1 in March.
+  assert.match(bar, /Session fornyet 09.40 · næste ca. 09.44 \(hvert 4. min\)/);
+  // Before the first keep-alive, the login itself is the last renewal.
+  assert.match(sessionBar("en", { browserOpen: true, loggedIn: true, since: "2026-03-01T08:00:00Z", nextKeepAliveAt: "2026-03-01T08:04:00Z" }), /Session renewed 09:00 · next about 09:04/);
+  assert.match(sessionBar("en", { browserOpen: false, loggedIn: false }), /Not logged in to sundhed.dk/);
+  assert.equal(sessionBar("en", undefined), "");
 });
