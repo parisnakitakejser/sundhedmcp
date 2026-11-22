@@ -25,6 +25,7 @@ const APP_PAGES: Record<string, string> = {
   vaccination: "/borger/min-side/min-sundhedsjournal/vaccinationer/",
   proevesvarportal: "/borger/min-side/min-sundhedsjournal/laboratoriesvar/",
   dennationalehenvisningsformidling: "/borger/min-side/min-sundhedsjournal/henvisninger/",
+  aftalerborger: "/borger/min-side/min-sundhedsjournal/aftaler/",
 };
 // Headers the browser sets itself (and HTTP/2 pseudo-headers like :path); anything else an app's page sends is the app's own.
 const BROWSER_HEADERS = /^(:.*|accept|accept-encoding|accept-language|user-agent|referer|origin|cookie|host|connection|content-length|content-type|priority|sec-.*)$/i;
@@ -454,9 +455,10 @@ export class SundhedSession {
   }
 
   /**
-   * POST JSON to a sundhed.dk path, inside the logged-in browser. This changes
-   * something on sundhed.dk; only prescription renewal uses it, and only when
-   * the server allows renewal (SUNDHEDMCP_ALLOW_RENEWAL).
+   * POST JSON to a sundhed.dk path, inside the logged-in browser. Prescription
+   * renewal uses it to change something on sundhed.dk, and only when the
+   * server allows renewal (SUNDHEDMCP_ALLOW_RENEWAL). The Aftaler app asks for
+   * its list of appointments with a POST too; that one only reads.
    */
   apiPost(path: string, body: unknown): Promise<unknown> {
     return this.call(path, JSON.stringify(body));

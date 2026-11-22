@@ -3,8 +3,17 @@ import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { connect, disconnect, hostedLoginUrl, SessionGone, startLogin, status } from "@sundhedmcp/session";
-import { isoDate, monthsAgo, sundhed } from "@sundhedmcp/client";
-import { forget, isRunning, type PartName, saved, type Snapshot } from "./snapshot.ts";
+import {
+  type AppointmentList,
+  appointmentStatus,
+  appointmentsBetween,
+  copenhagenDay,
+  copenhagenTime,
+  isoDate,
+  monthsAgo,
+  sundhed,
+} from "@sundhedmcp/client";
+import { APPOINTMENT_YEARS, forget, isRunning, type PartName, saved, type Snapshot } from "./snapshot.ts";
 import { syncStatus } from "./sync.ts";
 import { config } from "./config.ts";
 import { MAX_QUANTITY, RenewalError, renewalChoices, renewalOverview, sendRenewal } from "./renewal.ts";
@@ -45,6 +54,26 @@ const readOnly = { readOnlyHint: true, openWorldHint: true } as const;
 const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 // Ids go into sundhed.dk paths: no slashes or dots, so a call cannot reach another endpoint.
 const recordId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "Use the id exactly as an earlier tool returned it");
+
+/** The days asked for, in Danish time; by default APPOINTMENT_YEARS back and ahead. */
+export function appointmentRange(from?: string, to?: string, now = new Date()): { from: Date; to: Date } {
+  return {
+    from: from ? copenhagenDay(from) : monthsAgo(APPOINTMENT_YEARS * 12, now),
+    to: to ? copenhagenDay(to, true) : monthsAgo(-APPOINTMENT_YEARS * 12, now),
+  };
+}
+
+/** The list with each appointment's status at `now`, and the range it covers. */
+export function appointmentAnswer(list: AppointmentList, range: { from: Date; to: Date }, now = Date.now()) {
+  return {
+    from: copenhagenTime(range.from.getTime()),
+    to: copenhagenTime(range.to.getTime()),
+    now: copenhagenTime(now),
+    ...(list.notice ? { notice: list.notice } : {}),
+    ...(list.hiddenByConsent ? { hiddenByConsent: "Some appointments are hidden by the person's own consent settings on sundhed.dk." } : {}),
+    appointments: list.appointments.map((a) => ({ ...a, status: appointmentStatus(a, now) })),
+  };
+}
 
 export interface ToolOptions {
   /** The caller may change things (renew prescriptions). */
@@ -248,6 +277,36 @@ export function registerTools(server: McpServer, options: ToolOptions = {}): voi
       annotations: readOnly,
     },
     guard(async () => json(await sundhed.referrals()), "referrals", (snap) => snap.referrals),
+  );
+
+  server.registerTool(
+    "get_appointments",
+    {
+      title: "Appointments",
+      description:
+        "Appointments (aftaler) with hospitals, municipalities, GPs and specialists, as the Aftaler page on Min Side shows them, oldest first. Default range: two years back to two years ahead. Each has id, title, type (Kommune, Hospital, Laege og Speciallaege or Ukendt), start and end as RFC 3339 in Danish time (end is missing when endTimeKnown is false), status (upcoming, ongoing or past, worked out from the times; sundhed.dk gives no booking status), location and provider (organisation, ward, address, phone, SOR id), and whether it repeats.",
+      inputSchema: {
+        from: dateString.optional().describe("First day, YYYY-MM-DD. Default two years ago."),
+        to: dateString.optional().describe("Last day, YYYY-MM-DD. Default two years ahead."),
+      },
+      annotations: readOnly,
+    },
+    guard(async ({ from, to }) => {
+      const range = appointmentRange(from, to);
+      if (range.from > range.to) return fail("`from` is after `to`.");
+      return json(appointmentAnswer(await sundhed.appointments(range.from, range.to), range));
+    }, "appointments", (snap, { from, to }) => {
+      const list = snap.appointments;
+      if (!list) return undefined;
+      const range = appointmentRange(from, to);
+      const fetched = new Date(snap.fetchedAt.appointments ?? snap.savedAt);
+      const covered = { from: monthsAgo(APPOINTMENT_YEARS * 12, fetched), to: monthsAgo(-APPOINTMENT_YEARS * 12, fetched) };
+      const answer = appointmentAnswer({ ...list, appointments: appointmentsBetween(list.appointments, range.from, range.to) }, range);
+      if (range.from < covered.from || range.to > covered.to) {
+        return { ...answer, note: `The saved copy has appointments from ${isoDate(covered.from)} to ${isoDate(covered.to)} only.` };
+      }
+      return answer;
+    }),
   );
 
   // --- Prescription renewal: the one write to sundhed.dk, only when the server allows it ---

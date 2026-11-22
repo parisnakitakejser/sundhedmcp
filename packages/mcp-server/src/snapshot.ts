@@ -10,13 +10,15 @@
 // call runs for (asOwner), or on the default copy otherwise.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, readFileSync, rmSync } from "node:fs";
-import { monthsAgo, sundhed } from "@sundhedmcp/client";
+import { type AppointmentList, monthsAgo, sundhed } from "@sundhedmcp/client";
 import { defaultSession, type LoginState, SessionGone, type SundhedSession, withSession } from "@sundhedmcp/session";
 import type { ItemInput, ItemKind, OwnerStorage, StoredItem } from "./storage.ts";
 import { inNewTrace, traceFetch } from "./telemetry.ts";
 
 /** How far back the copy's lab results go. */
 export const LAB_YEARS = 10;
+/** How far back, and ahead, the copy's appointments go: what the Aftaler page shows. */
+export const APPOINTMENT_YEARS = 2;
 
 export interface Snapshot {
   /** When the copy last changed. */
@@ -32,12 +34,14 @@ export interface Snapshot {
   vaccinationDetails: Record<string, unknown>;
   labResults?: { from: string; to: string; results: unknown };
   referrals?: unknown;
+  /** Appointments from APPOINTMENT_YEARS before to APPOINTMENT_YEARS after the fetch. */
+  appointments?: AppointmentList;
   /** Parts that could not be fetched, with the reason. */
   errors: Record<string, string>;
 }
 
 /** The parts of the record, each fetched on its own (with its details). */
-export const PART_NAMES = ["summary", "medicationCard", "prescriptions", "vaccinations", "labResults", "referrals"] as const;
+export const PART_NAMES = ["summary", "medicationCard", "prescriptions", "vaccinations", "labResults", "referrals", "appointments"] as const;
 export type PartName = (typeof PART_NAMES)[number];
 
 export interface RefreshResult {
@@ -86,6 +90,10 @@ const FETCH: Record<PartName, (snap: Snapshot, take: Take) => Promise<void>> = {
   },
   referrals: async (snap, take) => {
     snap.referrals = await take("referrals", sundhed.referrals);
+  },
+  appointments: async (snap, take) => {
+    const now = new Date();
+    snap.appointments = await take("appointments", () => sundhed.appointments(monthsAgo(APPOINTMENT_YEARS * 12, now), monthsAgo(-APPOINTMENT_YEARS * 12, now)));
   },
 };
 
@@ -251,6 +259,7 @@ const PARTS = [
   ["vaccinations", "vaccinations"],
   ["labResults", "lab_results"],
   ["referrals", "referrals"],
+  ["appointments", "appointments"],
 ] as const satisfies ReadonlyArray<readonly [PartName, ItemKind]>;
 // The detail rows, and the part their ids come from.
 const DETAILS = [

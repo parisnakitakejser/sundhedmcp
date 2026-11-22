@@ -34,6 +34,7 @@ export const ITEM_KINDS = [
   "vaccination",
   "lab_results",
   "referrals",
+  "appointments",
   // The server's own state, under SERVER_OWNER_ID: OAuth clients and tokens (store.ts).
   "oauth_state",
   // A person's own settings, kept with their copy but not part of it: the

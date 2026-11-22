@@ -21,6 +21,7 @@ test("redactCpr leaves ids that are not CPR numbers alone", () => {
 test("decodeEntities turns sundhed.dk's HTML entities into text", () => {
   assert.equal(decodeEntities("v&#230;re logget p&#229;"), "være logget på");
   assert.equal(decodeEntities("A &amp; B &quot;x&quot;"), 'A & B "x"');
+  assert.equal(decodeEntities("&Oslash;st &aelig;ble &aring;"), "Øst æble å");
 });
 
 test("clean drops empty values and CPR fields but keeps false flags", () => {

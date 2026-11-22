@@ -24,6 +24,7 @@ export const SYNC_INTERVALS_MS: Record<PartName, number> = {
   labResults: 6 * HOUR,
   vaccinations: 24 * HOUR,
   referrals: 24 * HOUR,
+  appointments: 6 * HOUR,
 };
 
 /** The first retry after a failure; it doubles up to four intervals. */

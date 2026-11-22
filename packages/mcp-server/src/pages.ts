@@ -52,7 +52,7 @@ const T = {
     footer: "SundhedMCP · read-only · self-hosted · not affiliated with sundhed.dk",
     serverPassword: "Server password",
     allowTitle: "Allow access?", allowPill: "Sign-in request", anApp: "An app",
-    allowBody: (who: string) => `${who} wants read-only access to your sundhed.dk record through this server: medicine, prescriptions, test results, vaccinations and referrals.`,
+    allowBody: (who: string) => `${who} wants read-only access to your sundhed.dk record through this server: medicine, prescriptions, test results, vaccinations, referrals and appointments.`,
     allowBack: (host: string) => `After signing in you are sent back to <b>${host}</b>. Stop if that is not where you came from.`,
     allowButton: "Allow access",
     signedIn: "Signed in", backTo: (host: string) => `Taking you back to <b>${host}</b>.`, ifNothing: (a: string) => `If nothing happens, ${a}.`, continueTo: (host: string) => `continue to ${host}`,

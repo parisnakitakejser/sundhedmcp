@@ -38,8 +38,11 @@ session around. One person uses `defaultSession`.
 
 **`@sundhedmcp/client`** maps the Min Side apps to functions, one per
 endpoint, and returns cleaned data. `data.ts` has the cleaning (CPR masking,
-HTML entities, dates) and is the part with unit tests. All calls are GET:
-SundhedMCP only reads.
+HTML entities, dates) and is the part with unit tests; `appointments.ts`
+flattens the Aftaler app's answer and writes its times as RFC 3339 in Danish
+time. The calls are GET, except two POSTs: the Aftaler app asks for its list
+of appointments with one (it only reads), and prescription renewal, the one
+write, only when the server allows it.
 
 **`sundhedmcp`** (`packages/mcp-server`) is everything a person runs:
 

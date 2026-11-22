@@ -17,12 +17,17 @@ export function redactCpr(text: string): string {
 }
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+// Named letters are case-sensitive: &AElig; is Æ, &aelig; is æ. Appointment titles use them.
+const LETTERS: Record<string, string> = {
+  AElig: "Æ", aelig: "æ", Oslash: "Ø", oslash: "ø", Aring: "Å", aring: "å",
+  Auml: "Ä", auml: "ä", Ouml: "Ö", ouml: "ö", Uuml: "Ü", uuml: "ü", Eacute: "É", eacute: "é",
+};
 
 export function decodeEntities(text: string): string {
   return text
     .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
     .replace(/&#x([0-9a-f]+);/gi, (_, n: string) => String.fromCodePoint(parseInt(n, 16)))
-    .replace(/&([a-z]+);/gi, (m, name: string) => ENTITIES[name.toLowerCase()] ?? m);
+    .replace(/&([a-z]+);/gi, (m, name: string) => LETTERS[name] ?? ENTITIES[name.toLowerCase()] ?? m);
 }
 
 /**

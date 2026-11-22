@@ -32,6 +32,7 @@ const SINGLE = [
   ["summary", "summary"],
   ["lab-results", "labResults"],
   ["referrals", "referrals"],
+  ["appointments", "appointments"],
 ] as const satisfies ReadonlyArray<readonly [string, PartName]>;
 
 /** Mounts /api/v1. `auth` must set res.locals.api (an ApiCaller) or answer itself. */
@@ -238,6 +239,7 @@ export function openApi(writeScope: string, renewal = false) {
       "/vaccinations/{id}": detail("One vaccination."),
       "/lab-results": read("Lab results of the last years."),
       "/referrals": read("Referrals."),
+      "/appointments": read("Appointments two years back and two years ahead, oldest first: id, title, type, start and end (RFC 3339), location and provider."),
       "/refresh": write("post", "Fetch the record (or some parts) from sundhed.dk again, in the background.", { parts: { type: "array", items: { enum: [...PART_NAMES] } } }),
       "/logout": write("post", "Close the browser and end the sundhed.dk session.", { forgetSavedCopy: { type: "boolean" } }),
       "/saved-copy": write("delete", "Delete the saved copy."),
