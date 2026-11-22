@@ -71,10 +71,12 @@ export function mountApi(app: express.Express, opts: { auth: express.RequestHand
     "/status",
     run(async (_req, res, copy) => {
       const snap = copy.saved();
-      const s = await copy.session.status().catch(() => ({ loggedIn: false }));
+      const s = await copy.session.status().catch(() => ({ browserOpen: false, loggedIn: false }));
       res.json({
         version: VERSION,
         loggedIn: s.loggedIn,
+        // Since when, keep-alive, whether the login is kept for restarts. Never the cookies.
+        session: s,
         refreshing: copy.isRunning(),
         savedAt: snap?.savedAt ?? null,
         fetchedAt: snap?.fetchedAt ?? {},

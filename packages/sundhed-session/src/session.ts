@@ -58,6 +58,9 @@ interface State {
   /** How long the previous session lasted, for learning sundhed.dk's timeout. */
   lastSessionMinutes: number | null;
   keepAlive: NodeJS.Timeout | null;
+  lastKeepAliveAt: Date | null;
+  /** This login came from one kept before a restart (resume), not from MitID here. */
+  resumed: boolean;
 }
 
 
@@ -189,6 +192,18 @@ export interface Status {
   loggedIn: boolean;
   connectedMinutes?: number;
   lastSessionLastedMinutes?: number;
+  /** ISO times; present while logged in. */
+  since?: string;
+  lastKeepAliveAt?: string;
+  nextKeepAliveAt?: string;
+  keepAliveEveryMinutes?: number;
+  /** This login was resumed after a restart. */
+  resumed?: boolean;
+  /** The login is kept for restarts (hosted, with storage); keptAt is when it was last stored. */
+  keepsLogin?: boolean;
+  keptAt?: string;
+  /** When sundhed.dk last ended a session here, and how long it had lasted. */
+  lastEnded?: { at: string; minutes: number };
 }
 
 export type LoginInput =
@@ -211,6 +226,8 @@ export class SundhedSession {
   // calls run one at a time.
   private queue: Promise<unknown> = Promise.resolve();
   private keeper: ((login: LoginState | null) => Promise<void>) | null = null;
+  private keptAt: Date | null = null;
+  private lastEnded: { at: Date; minutes: number } | null = null;
 
   constructor(label = "default") {
     this.label = label;
@@ -233,7 +250,13 @@ export class SundhedSession {
     const keeper = this.keeper;
     if (!keeper) return;
     const login = s ? s.context.storageState() : Promise.resolve(null);
-    void login.then((state) => (s && this.state !== s ? undefined : keeper(state))).catch((err: unknown) => this.log(`could not keep the login: ${(err as Error).message}`));
+    void login
+      .then(async (state) => {
+        if (s && this.state !== s) return;
+        await keeper(state);
+        this.keptAt = state ? new Date() : null;
+      })
+      .catch((err: unknown) => this.log(`could not keep the login: ${(err as Error).message}`));
   }
 
   /**
@@ -246,6 +269,7 @@ export class SundhedSession {
     const s = await this.ensureBrowser(login);
     if (await checkLoggedIn(s)) {
       this.log("resumed the login kept before the restart");
+      s.resumed = true;
       this.markConnected(s);
       await apiPage(s);
       return true;
@@ -263,7 +287,7 @@ export class SundhedSession {
       const browser = await launchBrowser();
       const context = await browser.newContext({ locale: "da-DK", viewport: hostedBaseUrl ? VIEWPORT : null, ...(kept ? { storageState: kept } : {}) });
       const login = await context.newPage();
-      const s: State = { browser, context, login, api: null, apps: new Map(), connectedAt: null, lastConfirmedAt: null, endedAt: null, lastSessionMinutes: null, keepAlive: null };
+      const s: State = { browser, context, login, api: null, apps: new Map(), connectedAt: null, lastConfirmedAt: null, endedAt: null, lastSessionMinutes: null, keepAlive: null, lastKeepAliveAt: null, resumed: false };
       browser.on("disconnected", () => {
         if (this.state === s) this.reset("browser closed");
       });
@@ -309,6 +333,8 @@ export class SundhedSession {
       s.endedAt = new Date();
       s.lastSessionMinutes = minutesBetween(s.connectedAt, s.endedAt);
       this.log(`sundhed.dk ended the session after ${s.lastSessionMinutes} min`);
+      this.lastEnded = { at: s.endedAt, minutes: s.lastSessionMinutes };
+      s.resumed = false;
       this.keep(null);
     }
     s.connectedAt = null;
@@ -317,6 +343,7 @@ export class SundhedSession {
   /** Touches an authenticated page so sundhed.dk sees activity and keeps the session. */
   private async keepAlive(s: State): Promise<void> {
     if (this.state !== s) return;
+    s.lastKeepAliveAt = new Date();
     try {
       await this.apiGet("/app/minsideportal/api/v1/GetLoginInfo");
       if (!(await checkLoggedIn(s))) this.markEnded(s);
@@ -360,16 +387,27 @@ export class SundhedSession {
 
   async status(): Promise<Status> {
     const s = this.state;
-    if (!s) return { browserOpen: false, loggedIn: false };
+    const common = {
+      ...(this.keeper ? { keepsLogin: true } : {}),
+      ...(this.keptAt ? { keptAt: this.keptAt.toISOString() } : {}),
+      ...(this.lastEnded ? { lastEnded: { at: this.lastEnded.at.toISOString(), minutes: this.lastEnded.minutes } } : {}),
+    };
+    if (!s) return { browserOpen: false, loggedIn: false, ...common };
     const loggedIn = await checkLoggedIn(s);
     if (loggedIn) this.markConnected(s);
     else if (s.connectedAt) this.markEnded(s);
     const now = new Date();
+    const live = loggedIn && s.connectedAt;
+    const next = live && s.keepAlive ? new Date((s.lastKeepAliveAt ?? s.connectedAt ?? now).getTime() + KEEPALIVE_MS) : null;
     return {
       browserOpen: true,
       loggedIn,
-      ...(loggedIn && s.connectedAt ? { connectedMinutes: minutesBetween(s.connectedAt, now) } : {}),
+      ...(live ? { connectedMinutes: minutesBetween(s.connectedAt as Date, now), since: (s.connectedAt as Date).toISOString() } : {}),
+      ...(live && s.lastKeepAliveAt ? { lastKeepAliveAt: s.lastKeepAliveAt.toISOString() } : {}),
+      ...(next ? { nextKeepAliveAt: next.toISOString(), keepAliveEveryMinutes: Math.round(KEEPALIVE_MS / 60_000) } : {}),
+      ...(live && s.resumed ? { resumed: true } : {}),
       ...(!loggedIn && s.lastSessionMinutes !== null ? { lastSessionLastedMinutes: s.lastSessionMinutes } : {}),
+      ...common,
     };
   }
 

@@ -243,8 +243,8 @@ export function createApp(guide?: GuideOptions, multi?: MultiUser) {
   // The dashboard (dashboard.ts): the saved copy, part by part, and a button to fetch it again.
   app.get("/dashboard", (_req, res) => void res.redirect(303, "/connect/record"));
   async function dashboardInput(copy: SavedCopy): Promise<DashboardInput> {
-    const s = await copy.session.status().catch(() => ({ loggedIn: false }));
-    return { snapshot: copy.saved(), loggedIn: s.loggedIn, refreshing: copy.isRunning(), sync: asOwner(copy, syncStatus), apiUrl: new URL("/api/v1", baseUrl).href, renewal: config.allowRenewal };
+    const s = await copy.session.status().catch(() => ({ browserOpen: false, loggedIn: false }));
+    return { snapshot: copy.saved(), loggedIn: s.loggedIn, session: s, refreshing: copy.isRunning(), sync: asOwner(copy, syncStatus), apiUrl: new URL("/api/v1", baseUrl).href, renewal: config.allowRenewal };
   }
 
   // Prescription renewal, live against the viewer's session: the one write to sundhed.dk (renewal.ts).

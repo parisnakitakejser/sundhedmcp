@@ -11,6 +11,7 @@
 import { esc, type Lang, shell, view, when } from "./pages.ts";
 import { PART_NAMES, type PartName, type Snapshot } from "./snapshot.ts";
 import type { SyncStatus } from "./sync.ts";
+import type { Status } from "@sundhedmcp/session";
 import type { RenewalOverview, RenewalPackage, RenewableMedicine } from "./renewal.ts";
 import { type AutoRenewState, nextDue } from "./auto-renew.ts";
 
@@ -46,6 +47,9 @@ const T = {
     note: "Serverens gemte kopi af din journal på sundhed.dk. Den hentes igen af sig selv, mens du er logget ind.",
     none: "Der er ingen gemt kopi endnu. Log på med MitID, så henter serveren din journal.",
     session: "sundhed.dk-session", loggedIn: "logget ind", notLoggedIn: "ikke logget ind", login: "Log på med MitID",
+    since: "Logget ind siden", minutes: (n: number) => `${n} min`, lastKeepAlive: "Sidste keep-alive", nextKeepAlive: "Næste keep-alive", every: (n: number) => `hvert ${n}. min`,
+    kept: "Login gemt til genstart", keptYes: "ja, sidst gemt", keptOff: "nej (slået fra eller ingen lagring)", keptNone: "ikke endnu",
+    resumed: "Genoptaget efter en genstart, uden MitID", lastEnded: (at: string, n: number) => `sundhed.dk afsluttede sidste session ${at}, efter ${n} min`,
     savedAt: "Gemt", fetchedAt: "Hentet", nextRun: "Næste hentning", waitsForLogin: "venter på login", syncOff: "slået fra",
     fetching: "Henter nu …", refreshAll: "Hent alt igen", refreshPart: "Hent igen", notFetched: "Ikke hentet",
     items: (n: number) => (n === 1 ? "1 post" : `${n} poster`), series: (n: number) => (n === 1 ? "1 analyse" : `${n} analyser`),
@@ -78,6 +82,9 @@ const T = {
     note: "The server's saved copy of your sundhed.dk record. It is fetched again on its own while you are logged in.",
     none: "There is no saved copy yet. Log in with MitID and the server fetches your record.",
     session: "sundhed.dk session", loggedIn: "logged in", notLoggedIn: "not logged in", login: "Log in with MitID",
+    since: "Logged in since", minutes: (n: number) => `${n} min`, lastKeepAlive: "Last keep-alive", nextKeepAlive: "Next keep-alive", every: (n: number) => `every ${n} min`,
+    kept: "Login kept for restarts", keptYes: "yes, last stored", keptOff: "no (turned off, or no storage)", keptNone: "not yet",
+    resumed: "Resumed after a restart, without MitID", lastEnded: (at: string, n: number) => `sundhed.dk ended the last session ${at}, after ${n} min`,
     savedAt: "Saved", fetchedAt: "Fetched", nextRun: "Next fetch", waitsForLogin: "waits for a login", syncOff: "turned off",
     fetching: "Fetching now …", refreshAll: "Fetch everything again", refreshPart: "Fetch again", notFetched: "Not fetched",
     items: (n: number) => (n === 1 ? "1 item" : `${n} items`), series: (n: number) => (n === 1 ? "1 test" : `${n} tests`),
@@ -110,6 +117,8 @@ const T = {
 export interface DashboardInput {
   snapshot: Snapshot | null;
   loggedIn: boolean;
+  /** The session as the session package reports it. */
+  session?: Status;
   refreshing: boolean;
   sync: SyncStatus | null;
   apiUrl: string;
@@ -250,6 +259,7 @@ export function labChart(s: LabSeries): string {
 }
 
 const CSS = `<style>
+.session{margin:4px 0 14px;padding-left:18px}.session li{margin:2px 0}
   .nav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 18px}
   .nav a{padding:6px 12px;border-radius:999px;border:1px solid var(--line);color:var(--ink);text-decoration:none;font-size:14px}
   .nav a[aria-current="page"]{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
@@ -308,7 +318,22 @@ function nextRun(lang: Lang, sync: SyncStatus | null, part: PartName): string {
 function status(lang: Lang, input: DashboardInput): string {
   const t = T[lang];
   const snap = input.snapshot;
-  return `<div class="row"><span>${t.session}: <b class="${input.loggedIn ? "" : "muted"}">${input.loggedIn ? t.loggedIn : t.notLoggedIn}</b></span>${snap ? `<span class="muted">${t.savedAt} ${when(lang, snap.savedAt)}</span>` : ""}${refreshButton(lang, input)}</div>`;
+  return `<div class="row"><span>${t.session}: <b class="${input.loggedIn ? "" : "muted"}">${input.loggedIn ? t.loggedIn : t.notLoggedIn}</b></span>${snap ? `<span class="muted">${t.savedAt} ${when(lang, snap.savedAt)}</span>` : ""}${refreshButton(lang, input)}</div>${sessionDetails(lang, input.session)}`;
+}
+
+/** How the login is doing: since when, keep-alive, whether it survives a restart, and how the last one ended. */
+export function sessionDetails(lang: Lang, s: Status | undefined): string {
+  if (!s) return "";
+  const t = T[lang];
+  const rows: string[] = [];
+  if (s.loggedIn && s.since) rows.push(`${t.since} ${when(lang, s.since)}${s.connectedMinutes === undefined ? "" : ` (${t.minutes(s.connectedMinutes)})`}`);
+  if (s.resumed) rows.push(t.resumed);
+  if (s.loggedIn && s.nextKeepAliveAt) {
+    rows.push(`${t.lastKeepAlive}: ${s.lastKeepAliveAt ? when(lang, s.lastKeepAliveAt) : "—"} · ${t.nextKeepAlive}: ${when(lang, s.nextKeepAliveAt)}${s.keepAliveEveryMinutes ? ` (${t.every(s.keepAliveEveryMinutes)})` : ""}`);
+  }
+  rows.push(`${t.kept}: ${!s.keepsLogin ? t.keptOff : s.keptAt ? `${t.keptYes} ${when(lang, s.keptAt)}` : t.keptNone}`);
+  if (s.lastEnded) rows.push(t.lastEnded(when(lang, s.lastEnded.at), s.lastEnded.minutes));
+  return `<ul class="muted small session">${rows.map((r) => `<li>${r}</li>`).join("")}</ul>`;
 }
 
 const page = (lang: Lang, title: string, body: string, kind: "ok" | "neutral", back: string) => shell(lang, title, body, { pill: T[lang].pill, kind, head: CSS, wide: true, back });
