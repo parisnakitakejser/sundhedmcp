@@ -15,6 +15,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   type Attributes,
   context,
+  ROOT_CONTEXT,
   DiagConsoleLogger,
   DiagLogLevel,
   diag,
@@ -191,7 +192,21 @@ const headerGetter = {
  */
 export function routeOf(req: express.Request): string {
   const path = (req.route as { path?: unknown } | undefined)?.path;
-  return typeof path === "string" ? `${req.baseUrl}${path}` || "/" : "unmatched";
+  // A route given several paths, e.g. ["/mcp", "/"]: the one this request matched.
+  const template = Array.isArray(path) ? path.find((p) => typeof p === "string" && templateMatches(p, req.path)) : path;
+  return typeof template === "string" ? `${req.baseUrl}${template}` || "/" : "unmatched";
+}
+
+/** Whether `path` fits `template`: `:name` takes one segment, `*name` the rest. */
+function templateMatches(template: string, path: string): boolean {
+  const want = template.split("/");
+  const got = path.split("/");
+  for (let i = 0; i < want.length; i++) {
+    if (want[i].startsWith("*")) return true;
+    if (i >= got.length) return false;
+    if (want[i].startsWith(":") ? got[i] === "" : want[i] !== got[i]) return false;
+  }
+  return want.length === got.length;
 }
 
 /**
@@ -232,6 +247,27 @@ export function httpTelemetry(): express.RequestHandler {
 /** Runs `run` in a span; a throw marks the span as failed and is passed on. */
 export function inSpan<T>(name: string, attributes: Attributes, run: () => Promise<T>, kind: SpanKind = SpanKind.INTERNAL): Promise<T> {
   return tracer().startActiveSpan(name, { kind, attributes }, async (span) => {
+    try {
+      return await run();
+    } catch (err) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: errorType(err) });
+      span.setAttribute("error.type", errorType(err));
+      throw err;
+    } finally {
+      span.end();
+    }
+  });
+}
+
+/**
+ * Runs `run` as its own trace, linked to the active span. For work that goes
+ * on after the request that started it was answered (fetching the record in
+ * the background), so a sync of half a minute is not drawn under a request
+ * that took a few milliseconds.
+ */
+export function inNewTrace<T>(name: string, attributes: Attributes, run: () => Promise<T>): Promise<T> {
+  const from = trace.getActiveSpan()?.spanContext();
+  return tracer().startActiveSpan(name, { root: true, attributes, links: from ? [{ context: from }] : [] }, ROOT_CONTEXT, async (span) => {
     try {
       return await run();
     } catch (err) {

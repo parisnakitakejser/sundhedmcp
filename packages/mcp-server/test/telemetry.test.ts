@@ -7,7 +7,7 @@ import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { AggregationTemporality, InMemoryMetricExporter, MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { InMemorySpanExporter, SimpleSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
 import express from "express";
-import { httpTelemetry, instrumentTool, scrubLog, telemetryConfig, traceFetch } from "../src/telemetry.ts";
+import { httpTelemetry, inNewTrace, instrumentTool, scrubLog, telemetryConfig, traceFetch } from "../src/telemetry.ts";
 
 const spans = new InMemorySpanExporter();
 const metricExporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
@@ -27,6 +27,12 @@ before(async () => {
   const router = express.Router();
   router.get("/medication-card/:id", (req, res) => void res.json({ id: req.params.id }));
   app.use("/api/v1", router);
+  app.post(["/mcp", "/"], (_req, res) => void res.json({ ok: true }));
+  app.get(["/record", "/record/:part"], (_req, res) => void res.json({ ok: true }));
+  app.get("/background", (_req, res) => {
+    void inNewTrace("refresh", {}, () => new Promise((r) => setTimeout(r, 30)));
+    res.json({ ok: true });
+  });
   app.get("/healthz", (_req, res) => void res.json({ ok: true }));
   server = createServer(app);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -78,6 +84,28 @@ test("requests are named by route template, never by the id in the path", async 
   const sent = JSON.stringify([attributes, spans.getFinishedSpans().map((s) => [s.name, s.attributes])]);
   assert.ok(!sent.includes("123456789"));
   assert.ok(!sent.includes("0101011234"));
+});
+
+test("a route with several paths is named by the one that matched", async () => {
+  spans.reset();
+  await (await fetch(`${base}/mcp`, { method: "POST" })).text();
+  await (await fetch(`${base}/`, { method: "POST" })).text();
+  await (await fetch(`${base}/record`)).text();
+  await (await fetch(`${base}/record/labResults`)).text();
+  await settle();
+  assert.deepEqual(spans.getFinishedSpans().map((s) => s.name), ["POST /mcp", "POST /", "GET /record", "GET /record/:part"]);
+});
+
+test("background work is its own trace, linked to the request that started it", async () => {
+  spans.reset();
+  await (await fetch(`${base}/background`)).text();
+  await new Promise((r) => setTimeout(r, 60));
+  const request = spans.getFinishedSpans().find((s) => s.name === "GET /background");
+  const work = spans.getFinishedSpans().find((s) => s.name === "refresh");
+  assert.ok(request && work);
+  assert.notEqual(work.spanContext().traceId, request.spanContext().traceId);
+  assert.equal(work.parentSpanContext, undefined);
+  assert.equal(work.links[0]?.context.spanId, request.spanContext().spanId);
 });
 
 test("the caller's trace is continued", async () => {

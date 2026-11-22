@@ -13,7 +13,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { monthsAgo, sundhed } from "@sundhedmcp/client";
 import { defaultSession, type LoginState, SessionGone, type SundhedSession, withSession } from "@sundhedmcp/session";
 import type { ItemInput, ItemKind, OwnerStorage, StoredItem } from "./storage.ts";
-import { traceFetch } from "./telemetry.ts";
+import { inNewTrace, traceFetch } from "./telemetry.ts";
 
 /** How far back the copy's lab results go. */
 export const LAB_YEARS = 10;
@@ -176,7 +176,7 @@ export class SavedCopy {
     if (full && this.fullRun) return this.fullRun;
     this.pending++;
     const run = this.queue
-      .then(() => withSession(this.session, () => this.fetchParts(parts)))
+      .then(() => withSession(this.session, () => inNewTrace("refresh", { "sundhedmcp.parts": parts.length }, () => this.fetchParts(parts))))
       .finally(() => {
         this.pending--;
         if (full) this.fullRun = null;
