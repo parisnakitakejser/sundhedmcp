@@ -47,7 +47,8 @@ const T = {
     note: "Serverens gemte kopi af din journal på sundhed.dk. Den hentes igen af sig selv, mens du er logget ind.",
     none: "Der er ingen gemt kopi endnu. Log på med MitID, så henter serveren din journal.",
     session: "sundhed.dk-session", loggedIn: "logget ind", notLoggedIn: "ikke logget ind", login: "Log på med MitID",
-    since: "Logget ind siden", minutes: (n: number) => `${n} min`, lastKeepAlive: "Sidste keep-alive", nextKeepAlive: "Næste keep-alive", every: (n: number) => `hvert ${n}. min`,
+    renewedAt: "Session fornyet", renewNext: "næste ca.", sessionOff: "Ikke logget ind på sundhed.dk",
+    since: "Logget ind siden", minutes: (n: number) => `${n} min`, every: (n: number) => `hvert ${n}. min`,
     kept: "Login gemt til genstart", keptYes: "ja, sidst gemt", keptOff: "nej (slået fra eller ingen lagring)", keptNone: "ikke endnu",
     resumed: "Genoptaget efter en genstart, uden MitID", lastEnded: (at: string, n: number) => `sundhed.dk afsluttede sidste session ${at}, efter ${n} min`,
     savedAt: "Gemt", fetchedAt: "Hentet", nextRun: "Næste hentning", waitsForLogin: "venter på login", syncOff: "slået fra",
@@ -82,7 +83,8 @@ const T = {
     note: "The server's saved copy of your sundhed.dk record. It is fetched again on its own while you are logged in.",
     none: "There is no saved copy yet. Log in with MitID and the server fetches your record.",
     session: "sundhed.dk session", loggedIn: "logged in", notLoggedIn: "not logged in", login: "Log in with MitID",
-    since: "Logged in since", minutes: (n: number) => `${n} min`, lastKeepAlive: "Last keep-alive", nextKeepAlive: "Next keep-alive", every: (n: number) => `every ${n} min`,
+    renewedAt: "Session renewed", renewNext: "next about", sessionOff: "Not logged in to sundhed.dk",
+    since: "Logged in since", minutes: (n: number) => `${n} min`, every: (n: number) => `every ${n} min`,
     kept: "Login kept for restarts", keptYes: "yes, last stored", keptOff: "no (turned off, or no storage)", keptNone: "not yet",
     resumed: "Resumed after a restart, without MitID", lastEnded: (at: string, n: number) => `sundhed.dk ended the last session ${at}, after ${n} min`,
     savedAt: "Saved", fetchedAt: "Fetched", nextRun: "Next fetch", waitsForLogin: "waits for a login", syncOff: "turned off",
@@ -260,6 +262,8 @@ export function labChart(s: LabSeries): string {
 
 const CSS = `<style>
 .session{margin:4px 0 14px;padding-left:18px}.session li{margin:2px 0}
+  .sbar{margin:0 0 12px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;display:inline-flex;align-items:center;gap:8px}
+  .sbar .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}.sbar.off{color:var(--muted)}
   .nav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 18px}
   .nav a{padding:6px 12px;border-radius:999px;border:1px solid var(--line);color:var(--ink);text-decoration:none;font-size:14px}
   .nav a[aria-current="page"]{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
@@ -321,6 +325,22 @@ function status(lang: Lang, input: DashboardInput): string {
   return `<div class="row"><span>${t.session}: <b class="${input.loggedIn ? "" : "muted"}">${input.loggedIn ? t.loggedIn : t.notLoggedIn}</b></span>${snap ? `<span class="muted">${t.savedAt} ${when(lang, snap.savedAt)}</span>` : ""}${refreshButton(lang, input)}</div>${sessionDetails(lang, input.session)}`;
 }
 
+const clock = (lang: Lang, iso: string) =>
+  esc(new Date(iso).toLocaleTimeString(lang === "da" ? "da-DK" : "en-GB", { timeZone: "Europe/Copenhagen", hour: "2-digit", minute: "2-digit" }));
+
+/**
+ * The line at the top of every record page: when the keep-alive last renewed
+ * the session (or the login, before the first one), and about when it runs next.
+ */
+export function sessionBar(lang: Lang, s: Status | undefined): string {
+  if (!s) return "";
+  const t = T[lang];
+  if (!s.loggedIn) return `<p class="sbar off small">${t.sessionOff} · <a href="/connect">${t.login}</a></p>`;
+  const last = s.lastKeepAliveAt ?? s.since;
+  const every = s.keepAliveEveryMinutes ? ` (${t.every(s.keepAliveEveryMinutes)})` : "";
+  return `<p class="sbar small"><span class="dot" aria-hidden="true"></span>${t.renewedAt} ${last ? clock(lang, last) : "—"}${s.nextKeepAliveAt ? ` · ${t.renewNext} ${clock(lang, s.nextKeepAliveAt)}${every}` : ""}</p>`;
+}
+
 /** How the login is doing: since when, keep-alive, whether it survives a restart, and how the last one ended. */
 export function sessionDetails(lang: Lang, s: Status | undefined): string {
   if (!s) return "";
@@ -328,9 +348,6 @@ export function sessionDetails(lang: Lang, s: Status | undefined): string {
   const rows: string[] = [];
   if (s.loggedIn && s.since) rows.push(`${t.since} ${when(lang, s.since)}${s.connectedMinutes === undefined ? "" : ` (${t.minutes(s.connectedMinutes)})`}`);
   if (s.resumed) rows.push(t.resumed);
-  if (s.loggedIn && s.nextKeepAliveAt) {
-    rows.push(`${t.lastKeepAlive}: ${s.lastKeepAliveAt ? when(lang, s.lastKeepAliveAt) : "—"} · ${t.nextKeepAlive}: ${when(lang, s.nextKeepAliveAt)}${s.keepAliveEveryMinutes ? ` (${t.every(s.keepAliveEveryMinutes)})` : ""}`);
-  }
   rows.push(`${t.kept}: ${!s.keepsLogin ? t.keptOff : s.keptAt ? `${t.keptYes} ${when(lang, s.keptAt)}` : t.keptNone}`);
   if (s.lastEnded) rows.push(t.lastEnded(when(lang, s.lastEnded.at), s.lastEnded.minutes));
   return `<ul class="muted small session">${rows.map((r) => `<li>${r}</li>`).join("")}</ul>`;
@@ -343,7 +360,7 @@ export function dashboardPage(lang: Lang, input: DashboardInput): string {
   const t = T[lang];
   const snap = input.snapshot;
   const kind = input.loggedIn ? "ok" : "neutral";
-  if (!snap) return page(lang, t.title, `${nav(lang, null, input.renewal)}<p>${t.none}</p>${status(lang, input)}`, kind, BASE);
+  if (!snap) return page(lang, t.title, `${sessionBar(lang, input.session)}${nav(lang, null, input.renewal)}<p>${t.none}</p>${status(lang, input)}`, kind, BASE);
   const tiles = PART_NAMES.filter((p) => p !== "summary").map((part) => {
     const data = part === "labResults" ? snap.labResults?.results : snap[part];
     const error = snap.errors[part];
@@ -355,7 +372,7 @@ export function dashboardPage(lang: Lang, input: DashboardInput): string {
   });
   const summary = snap.summary === undefined ? "" : `<section><h2>${t.parts.summary}</h2>${view(lang, snap.summary)}</section>`;
   const api = `<section><h2>${t.api}</h2><p class="muted">${t.apiBody}</p><p><code>${esc(input.apiUrl)}</code></p><p class="small"><a href="/api/v1/openapi.json">openapi.json</a></p></section>`;
-  return page(lang, t.title, `${nav(lang, null, input.renewal)}<p class="muted small">${t.note}</p>${status(lang, input)}<div class="tiles">${tiles.join("")}</div>${summary}${api}`, kind, BASE);
+  return page(lang, t.title, `${sessionBar(lang, input.session)}${nav(lang, null, input.renewal)}<p class="muted small">${t.note}</p>${status(lang, input)}<div class="tiles">${tiles.join("")}</div>${summary}${api}`, kind, BASE);
 }
 
 /** One part: when it was fetched, its data, and the details of each entry. Lab results are drawn. */
@@ -365,7 +382,7 @@ export function partPage(lang: Lang, part: PartName, input: DashboardInput): str
   const back = `${BASE}/${PART_SLUGS[part]}`;
   const kind = input.loggedIn ? "ok" : "neutral";
   const data = part === "labResults" ? snap?.labResults?.results : snap?.[part];
-  const head = `${nav(lang, part, input.renewal)}<div class="row"><span class="muted small">${data === undefined ? t.notFetched : `${t.fetchedAt} ${when(lang, snap?.fetchedAt[part])}`}${part === "labResults" && snap?.labResults ? ` · ${esc(snap.labResults.from)} – ${esc(snap.labResults.to)}` : ""}</span><span class="muted small">${nextRun(lang, input.sync, part)}</span>${refreshButton(lang, input, part)}</div>${snap?.errors[part] ? `<p class="error small">${esc(snap.errors[part])}</p>` : ""}`;
+  const head = `${sessionBar(lang, input.session)}${nav(lang, part, input.renewal)}<div class="row"><span class="muted small">${data === undefined ? t.notFetched : `${t.fetchedAt} ${when(lang, snap?.fetchedAt[part])}`}${part === "labResults" && snap?.labResults ? ` · ${esc(snap.labResults.from)} – ${esc(snap.labResults.to)}` : ""}</span><span class="muted small">${nextRun(lang, input.sync, part)}</span>${refreshButton(lang, input, part)}</div>${snap?.errors[part] ? `<p class="error small">${esc(snap.errors[part])}</p>` : ""}`;
   if (!snap || data === undefined) return page(lang, t.parts[part], `${head}${snap ? "" : `<p>${t.none}</p>`}`, kind, back);
 
   if (part === "labResults") {
@@ -403,9 +420,9 @@ export function partPage(lang: Lang, part: PartName, input: DashboardInput): str
 const renewalPage = (lang: Lang, title: string, body: string, back?: string) => shell(lang, title, body, { pill: T[lang].renewals, kind: "neutral", head: CSS, wide: true, back });
 
 /** The medicine that can be renewed, live from sundhed.dk, or why it cannot be shown. */
-export function renewalsPage(lang: Lang, state: { loggedIn: boolean; overview?: RenewalOverview; error?: string; auto?: AutoRenewView; notice?: string }): string {
+export function renewalsPage(lang: Lang, state: { loggedIn: boolean; overview?: RenewalOverview; error?: string; auto?: AutoRenewView; notice?: string; session?: Status }): string {
   const t = T[lang];
-  const head = `${nav(lang, "renewals", true)}<p class="muted small">${t.renewalNote}</p>${state.notice ? `<p class="small">${esc(state.notice)}</p>` : ""}`;
+  const head = `${sessionBar(lang, state.session)}${nav(lang, "renewals", true)}<p class="muted small">${t.renewalNote}</p>${state.notice ? `<p class="small">${esc(state.notice)}</p>` : ""}`;
   const auto = state.auto ? autoSection(lang, state.auto) : "";
   if (!state.loggedIn || !state.overview) {
     const why = state.error ? `<p class="error small">${esc(state.error)}</p>` : `<p>${t.renewalLogin}</p><p><a href="/connect">${t.login}</a></p>`;

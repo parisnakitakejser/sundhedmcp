@@ -271,16 +271,16 @@ export function createApp(guide?: GuideOptions, multi?: MultiUser) {
       const copy = await renewalViewer(req, res);
       if (!copy) return;
       const lang = langOf(req);
-      const s = await copy.session.status().catch(() => ({ loggedIn: false }));
+      const s = await copy.session.status().catch(() => ({ browserOpen: false, loggedIn: false }));
       const auto = { state: await loadAutoRenew(copy), cooldownMs: cooldownMs() };
       const notice = req.query.stopped === "1" ? renewalTexts(lang).stopped : undefined;
       let page: string;
-      if (!s.loggedIn) page = renewalsPage(lang, { loggedIn: false, auto, notice });
+      if (!s.loggedIn) page = renewalsPage(lang, { loggedIn: false, auto, notice, session: s });
       else {
         try {
-          page = renewalsPage(lang, { loggedIn: true, overview: await asOwner(copy, () => renewalOverview()), auto, notice });
+          page = renewalsPage(lang, { loggedIn: true, overview: await asOwner(copy, () => renewalOverview()), auto, notice, session: s });
         } catch (err) {
-          page = renewalsPage(lang, { loggedIn: true, error: renewalFailure(err), auto, notice });
+          page = renewalsPage(lang, { loggedIn: true, error: renewalFailure(err), auto, notice, session: s });
         }
       }
       res.set("Cache-Control", "no-store").type("html").send(page);
