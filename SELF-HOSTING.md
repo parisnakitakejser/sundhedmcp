@@ -114,7 +114,7 @@ reaching only its own person's copy). `/api/v1/openapi.json` describes it.
 | Call | |
 |---|---|
 | `GET /status` | Logged in, refreshing, sync, when each part was fetched, errors |
-| `GET /summary`, `/lab-results`, `/referrals` | One part: `{ fetchedAt, error, data }` |
+| `GET /summary`, `/lab-results`, `/referrals`, `/appointments` | One part: `{ fetchedAt, error, data }` |
 | `GET /medication-card`, `/prescriptions`, `/vaccinations` | The list, plus `details`: the ids with details |
 | `GET /medication-card/{id}`, `/prescriptions/{id}`, `/vaccinations/{id}` | One detail |
 | `POST /refresh` | Fetch everything (or `{"parts": [...]}`) again in the background; `202` |

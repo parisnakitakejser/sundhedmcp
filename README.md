@@ -3,7 +3,7 @@
 **Your AI now reads your health record.** A small, local, read-only MCP server
 that lets Claude (or any MCP client) read your own record on
 [sundhed.dk](https://www.sundhed.dk): medicine card, prescriptions, lab
-results, vaccinations and referrals.
+results, vaccinations, referrals and appointments.
 
 Not affiliated with sundhed.dk, Sundhedsdatastyrelsen or MitID. For one person
 reading their own record on their own machine. It runs locally; there is no
@@ -14,7 +14,7 @@ hosted service. If you run it on a server yourself, read
 
 - **Your AI provider sees what it reads.** SundhedMCP runs on your computer and
   talks only to sundhed.dk. But everything your AI reads through it (medicine,
-  prescriptions, lab results, vaccinations, referrals) is sent to the AI
+  prescriptions, lab results, vaccinations, referrals, appointments) is sent to the AI
   provider you connect it to, such as Anthropic or OpenAI, and handled under
   that provider's terms and retention rules. That is your choice; make it
   knowingly.
@@ -92,7 +92,7 @@ read it after the sundhed.dk session ends. `disconnect_sundhed` with
 `forget_saved_copy` deletes it.
 
 That copy is your whole record (medicine, prescriptions, lab results,
-vaccinations, referrals). The key sits next to it, readable only by your user
+vaccinations, referrals, appointments). The key sits next to it, readable only by your user
 (mode 600), so keep disk encryption on (FileVault, BitLocker, LUKS).
 
 The Docker image (`packages/mcp-server/src/server.ts`) serves only a page that
@@ -116,6 +116,7 @@ chart: see [SELF-HOSTING.md](SELF-HOSTING.md).
 | `get_vaccinations` | Every registered vaccination |
 | `get_vaccination` | One vaccination: diseases covered, programme, coverage |
 | `get_referrals` | Active and earlier referrals |
+| `get_appointments` | Appointments (aftaler), two years back and ahead or a date range: times in RFC 3339, place, provider, upcoming or past |
 | `phone_access` | Starts `sundhedmcp serve` and opens its setup guide for claude.ai and your phone |
 
 ## Settings
@@ -135,8 +136,8 @@ the Helm chart): see [SELF-HOSTING.md](SELF-HOSTING.md).
 Right after each MitID login the whole record is fetched into the saved copy.
 While the session lasts, each part is fetched again on its own interval, so
 the copy is close to current when sundhed.dk ends the session: the summary,
-medicine card and prescriptions every hour, lab results every 6 hours,
-vaccinations and referrals every day. One part runs at a time, and only reads.
+medicine card and prescriptions every hour, lab results and appointments
+every 6 hours, vaccinations and referrals every day. One part runs at a time, and only reads.
 A part that fails keeps its previous copy and is tried again after 10 minutes,
 then less often. `session_status` shows when each part was fetched and when it
 is fetched next.

@@ -31,6 +31,7 @@ export const PART_SLUGS: Record<PartName, string> = {
   vaccinations: "vaccinations",
   labResults: "lab-results",
   referrals: "referrals",
+  appointments: "appointments",
 };
 export const partOfSlug = (slug: string): PartName | undefined => PART_NAMES.find((p) => PART_SLUGS[p] === slug);
 
@@ -58,7 +59,7 @@ const T = {
     latest: "Seneste", range: "Referenceinterval", outside: "uden for interval", unit: "Enhed", date: "Dato", analysis: "Analyse", values: "Målinger",
     noLab: "Ingen prøvesvar med talværdier i den gemte kopi.",
     api: "API", apiBody: "Samme data som JSON, til scripts og egne dashboards. Kald den med et adgangstoken; se SELF-HOSTING.md for, hvordan du får et.",
-    parts: { summary: "Overblik", medicationCard: "Medicinkort", prescriptions: "Recepter", vaccinations: "Vaccinationer", labResults: "Prøvesvar", referrals: "Henvisninger" },
+    parts: { summary: "Overblik", medicationCard: "Medicinkort", prescriptions: "Recepter", vaccinations: "Vaccinationer", labResults: "Prøvesvar", referrals: "Henvisninger", appointments: "Aftaler" },
     renewals: "Forny recept",
     renewalNote: "Bed din læge om at forny en recept. Listen hentes direkte fra sundhed.dk, ikke fra den gemte kopi. Lægen afgør anmodningen.",
     renewalLogin: "Fornyelse læser dit medicinkort direkte, så du skal være logget ind.",
@@ -94,7 +95,7 @@ const T = {
     latest: "Latest", range: "Reference range", outside: "outside the range", unit: "Unit", date: "Date", analysis: "Test", values: "Results",
     noLab: "No lab results with numbers in the saved copy.",
     api: "API", apiBody: "The same data as JSON, for scripts and your own dashboards. Call it with an access token; SELF-HOSTING.md says how to get one.",
-    parts: { summary: "Overview", medicationCard: "Medication card", prescriptions: "Prescriptions", vaccinations: "Vaccinations", labResults: "Lab results", referrals: "Referrals" },
+    parts: { summary: "Overview", medicationCard: "Medication card", prescriptions: "Prescriptions", vaccinations: "Vaccinations", labResults: "Lab results", referrals: "Referrals", appointments: "Appointments" },
     renewals: "Renew prescription",
     renewalNote: "Ask your GP to renew a prescription. The list is read live from sundhed.dk, not from the saved copy. Your GP decides on the request.",
     renewalLogin: "Renewal reads your medicine card live, so you need to be logged in.",

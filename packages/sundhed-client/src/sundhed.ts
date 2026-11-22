@@ -1,13 +1,16 @@
 // The sundhed.dk citizen endpoints, as the site's own pages call them.
 // Mapped from the Min Side apps; only query values seen in real traffic are used.
-// Everything here only reads, except requestRenewal at the end.
+// Everything here only reads, except requestRenewal at the end. appointments
+// is a POST too, as the Aftaler page sends it, but it only asks for a list.
 import { apiGet, apiPost } from "@sundhedmcp/session";
+import { type AppointmentList, appointmentsFrom, mergeAppointments } from "./appointments.ts";
 import { clean, isoDate } from "./data.ts";
 
 const MEDICINKORT = "/app/medicinkort2borger/api/v1";
 const VACCINATION = "/app/vaccination/api/v1";
 const PROEVESVAR = "/app/proevesvarportal/api/v1";
 const HENVISNING = "/app/DenNationaleHenvisningsformidling/api/v1";
+const AFTALER = "/app/aftalerborger/api/v1";
 
 /** One path segment. Refuses anything that is not a plain id, such as "..". */
 export function id(value: string | number): string {
@@ -59,6 +62,30 @@ export function labResults(from: Date, to: Date) {
 }
 
 export const referrals = () => get(`${HENVISNING}/henvisninger`);
+
+/** The longest range the Aftaler page asks for in one call: two years back, or two ahead. */
+export const APPOINTMENT_SPAN_YEARS = 2;
+
+/**
+ * Appointments (aftaler) with hospitals, municipalities, GPs and specialists
+ * that overlap [from, to], oldest first. The Aftaler page asks with
+ * { FromDate, ToDate, Version: 2, WithPartials } and never for more than two
+ * years at once, so a longer range is asked for in parts of two years.
+ */
+export async function appointments(from: Date, to: Date): Promise<AppointmentList> {
+  const parts: AppointmentList[] = [];
+  let start = from;
+  while (start <= to) {
+    const limit = new Date(start);
+    limit.setFullYear(limit.getFullYear() + APPOINTMENT_SPAN_YEARS);
+    const end = limit < to ? limit : to;
+    const raw = await apiPost(`${AFTALER}/aftaler/cpr`, { FromDate: start.toISOString(), ToDate: end.toISOString(), Version: 2, WithPartials: true });
+    parts.push(appointmentsFrom(raw));
+    if (end >= to) break;
+    start = new Date(end.getTime() + 1);
+  }
+  return mergeAppointments(parts);
+}
 
 // --- Prescription renewal (receptfornyelse), as the medicine card's own "Forny recept" calls it ---
 
