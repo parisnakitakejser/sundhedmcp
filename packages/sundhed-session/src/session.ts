@@ -34,8 +34,15 @@ const POLL_MS = 2_000;
 const KEEPALIVE_MS = Number(process.env.SUNDHEDMCP_KEEPALIVE_MS ?? 4 * 60_000);
 
 /** The person is not logged in, or sundhed.dk ended the session. */
-/** The browser's cookies and storage for sundhed.dk, as Playwright exports them. */
-export type LoginState = Awaited<ReturnType<BrowserContext["storageState"]>>;
+/**
+ * The browser's cookies and storage for sundhed.dk, as Playwright exports them
+ * (with IndexedDB), plus the sundhed.dk tab's sessionStorage, which Playwright
+ * leaves out.
+ */
+export type LoginState = Awaited<ReturnType<BrowserContext["storageState"]>> & { sessionStorage?: Record<string, string> };
+
+/** The API that says whether sundhed.dk really accepts the login; the keep-alive calls it too. */
+const PROBE_PATH = "/app/minsideportal/api/v1/GetLoginInfo";
 
 export class SessionGone extends Error {
   constructor() {
@@ -249,7 +256,7 @@ export class SundhedSession {
   private keep(s: State | null): void {
     const keeper = this.keeper;
     if (!keeper) return;
-    const login = s ? s.context.storageState() : Promise.resolve(null);
+    const login = s ? loginState(s) : Promise.resolve(null);
     void login
       .then(async (state) => {
         if (s && this.state !== s) return;
@@ -267,14 +274,17 @@ export class SundhedSession {
   async resume(login: LoginState): Promise<boolean> {
     if (this.state || this.launching) return false;
     const s = await this.ensureBrowser(login);
-    if (await checkLoggedIn(s)) {
+    // isloggedin alone is not enough: it has said yes to a kept login whose
+    // every API call sundhed.dk then refused (403). Ask a real API too.
+    const status = (await checkLoggedIn(s)) ? await probe(s).catch(() => 0) : 0;
+    if (status >= 200 && status < 300) {
       this.log("resumed the login kept before the restart");
       s.resumed = true;
       this.markConnected(s);
-      await apiPage(s);
       return true;
     }
-    this.log("the login kept before the restart has ended");
+    if (status) this.log(`sundhed.dk refused the login kept before the restart (${status}); log in again with MitID. ${await cookieDiff(s, login)}`);
+    else this.log("the login kept before the restart has ended");
     this.keep(null);
     this.reset("kept login ended");
     await s.browser.close().catch(() => {});
@@ -286,6 +296,19 @@ export class SundhedSession {
     this.launching ??= (async () => {
       const browser = await launchBrowser();
       const context = await browser.newContext({ locale: "da-DK", viewport: hostedBaseUrl ? VIEWPORT : null, ...(kept ? { storageState: kept } : {}) });
+      if (kept?.sessionStorage) {
+        // Put the kept sessionStorage back once, before sundhed.dk's own scripts run.
+        await context.addInitScript(
+          ({ origin, items }) => {
+            // Runs in the page, where location exists; this package has no DOM types.
+            const { location } = globalThis as unknown as { location: { origin: string } };
+            if (location.origin !== origin || sessionStorage.getItem("__sundhedmcp_restored")) return;
+            for (const [k, v] of Object.entries(items)) sessionStorage.setItem(k, v);
+            sessionStorage.setItem("__sundhedmcp_restored", "1");
+          },
+          { origin: ORIGIN, items: kept.sessionStorage },
+        );
+      }
       const login = await context.newPage();
       const s: State = { browser, context, login, api: null, apps: new Map(), connectedAt: null, lastConfirmedAt: null, endedAt: null, lastSessionMinutes: null, keepAlive: null, lastKeepAliveAt: null, resumed: false };
       browser.on("disconnected", () => {
@@ -345,7 +368,7 @@ export class SundhedSession {
     if (this.state !== s) return;
     s.lastKeepAliveAt = new Date();
     try {
-      await this.apiGet("/app/minsideportal/api/v1/GetLoginInfo");
+      await this.apiGet(PROBE_PATH);
       if (!(await checkLoggedIn(s))) this.markEnded(s);
       // sundhed.dk may have renewed its cookies; keep the newest.
       else this.keep(s);
@@ -465,6 +488,16 @@ export class SundhedSession {
     if (res.status === 401 || res.status === 403) {
       if (!(await checkLoggedIn(s))) {
         this.markEnded(s);
+        throw new SessionGone();
+      }
+      // isloggedin says yes, but if Min Side's own API refuses too, the login
+      // is only half alive. Throw it away: as long as this browser keeps it,
+      // isloggedin keeps saying yes and a new MitID login cannot start.
+      const portal = app === "minsideportal" ? res.status : await probe(s).catch(() => 0);
+      if (portal === 401 || portal === 403) {
+        this.log(`sundhed.dk refuses its API (${portal}) although isloggedin says yes; closing the browser so a new MitID login can start`);
+        this.markEnded(s);
+        await this.close("login refused by the API");
         throw new SessionGone();
       }
       throw new Error(`sundhed.dk refused ${app || "this"} data (${res.status}) although you are logged in. The site may have changed how this app signs in.`);
@@ -625,6 +658,35 @@ function reason(text: string): string {
 }
 
 /** A GET, or a POST of `body` (JSON) when given. */
+/** Calls the probe API in the background tab; resolves to its HTTP status. */
+async function probe(s: State): Promise<number> {
+  return (await fetchInPage(s, "minsideportal", PROBE_PATH)).status;
+}
+
+async function loginState(s: State): Promise<LoginState> {
+  const state: LoginState = await s.context.storageState({ indexedDB: true });
+  const page = s.api && !s.api.isClosed() ? s.api : null;
+  if (page?.url().startsWith(ORIGIN)) {
+    const stored = await page.evaluate(() => Object.fromEntries(Object.entries(sessionStorage))).catch(() => ({}));
+    delete (stored as Record<string, string>).__sundhedmcp_restored;
+    if (Object.keys(stored).length) state.sessionStorage = stored;
+  }
+  return state;
+}
+
+/**
+ * Which cookies (names only, never values) the kept login had that the browser
+ * now lacks, and the other way round, for learning why sundhed.dk refused it.
+ */
+async function cookieDiff(s: State, kept: LoginState): Promise<string> {
+  const key = (c: { name: string; domain: string; path: string }) => `${c.name}@${c.domain}${c.path}`;
+  const before = new Set(kept.cookies.map(key));
+  const now = new Set((await s.context.cookies().catch(() => [])).map(key));
+  const gone = [...before].filter((k) => !now.has(k));
+  const added = [...now].filter((k) => !before.has(k));
+  return `Cookies kept: ${before.size}, now: ${now.size}, gone: ${gone.join(" ") || "none"}, new: ${added.join(" ") || "none"}.`;
+}
+
 async function fetchInPage(s: State, app: string, path: string, body?: string) {
   if (!s.apps.has(app)) await bootApp(s, app);
   const page = await apiPage(s);
