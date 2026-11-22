@@ -17,12 +17,12 @@ export function id(value: string | number): string {
 }
 const get = async (path: string) => clean(await apiGet(path));
 
+// One call after the other: the session sends them one at a time anyway, and
+// a failed one then stops the rest instead of leaving them running unawaited.
 export async function summary() {
-  const [medicine, prescriptions, vaccinations] = await Promise.all([
-    apiGet(`${MEDICINKORT}/ordinations/overview/`),
-    apiGet(`${MEDICINKORT}/prescriptions/overview/`),
-    apiGet(`${VACCINATION}/overview`),
-  ]);
+  const medicine = await apiGet(`${MEDICINKORT}/ordinations/overview/`);
+  const prescriptions = await apiGet(`${MEDICINKORT}/prescriptions/overview/`);
+  const vaccinations = await apiGet(`${VACCINATION}/overview`);
   return clean({ medicine, prescriptions, vaccinations });
 }
 

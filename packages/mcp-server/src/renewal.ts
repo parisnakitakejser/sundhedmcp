@@ -103,7 +103,9 @@ async function ordinations(client: RenewalClient) {
 
 /** Every medicine the renewal page lists, whether each can be renewed, and earlier requests. */
 export async function renewalOverview(client: RenewalClient = sundhed): Promise<RenewalOverview> {
-  const [{ rows, hasDoctor }, requests] = await Promise.all([ordinations(client), client.renewalRequests()]);
+  // One after the other, as summary() in the client does.
+  const { rows, hasDoctor } = await ordinations(client);
+  const requests = await client.renewalRequests();
   return { hasDoctor, medicines: rows.map((r) => medicine(r, hasDoctor)), requests: requests ?? [] };
 }
 
