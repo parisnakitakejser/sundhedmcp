@@ -26,8 +26,12 @@ and no public API, so the session is the logged-in browser itself: every call
 runs as a `fetch()` in its page, with the site's own cookies and headers.
 Nothing is written to disk here: hosted, the server can be handed the
 browser's cookies after each login and keep-alive (`persistLogin`) to store
-them, and `resume` opens a browser with them after a restart. A
-`SundhedSession` is one browser; the
+them (cookies, IndexedDB and the tab's sessionStorage), and `resume` opens a
+browser with them after a restart. `/api/login/isloggedin` can say yes to a
+login whose API calls sundhed.dk refuses, so a resume, and a refused call, also
+ask Min Side's own API (`GetLoginInfo`). If that refuses too, the browser is
+closed: as long as it holds the half-dead login, a new MitID login cannot
+start. A `SundhedSession` is one browser; the
 module functions (`connect`, `apiGet`, ...) act on the current one, set with
 `withSession` (AsyncLocalStorage), so the client and the tools never pass a
 session around. One person uses `defaultSession`.
