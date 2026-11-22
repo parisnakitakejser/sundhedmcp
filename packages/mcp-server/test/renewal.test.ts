@@ -288,3 +288,27 @@ test("stopping auto-renew needs a same-origin form", async () => {
   const res = await fetch(`${base}/connect/record/renewals/auto/stop`, { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://evil.example.test" }, body: "id=101" });
   assert.equal(res.status, 403);
 });
+
+test("the dashboard says how the session is doing", async () => {
+  const { sessionDetails } = await import("../src/dashboard.ts");
+  const live = sessionDetails("en", {
+    browserOpen: true,
+    loggedIn: true,
+    since: "2026-03-01T08:00:00Z",
+    connectedMinutes: 42,
+    lastKeepAliveAt: "2026-03-01T08:40:00Z",
+    nextKeepAliveAt: "2026-03-01T08:44:00Z",
+    keepAliveEveryMinutes: 4,
+    resumed: true,
+    keepsLogin: true,
+    keptAt: "2026-03-01T08:40:00Z",
+  });
+  assert.match(live, /Logged in since .*\(42 min\)/);
+  assert.match(live, /Resumed after a restart/);
+  assert.match(live, /every 4 min/);
+  assert.match(live, /Login kept for restarts: yes, last stored/);
+  const out = sessionDetails("da", { browserOpen: false, loggedIn: false, lastEnded: { at: "2026-03-01T10:00:00Z", minutes: 120 } });
+  assert.match(out, /nej \(slået fra/);
+  assert.match(out, /efter 120 min/);
+  assert.doesNotMatch(out, /keep-alive/);
+});
