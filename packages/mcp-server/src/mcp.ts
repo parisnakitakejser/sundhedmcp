@@ -3,7 +3,7 @@ import { instrumentTools } from "./telemetry.ts";
 import { config } from "./config.ts";
 import { registerTools } from "./tools.ts";
 
-export const VERSION = "0.2.0"; // x-release-please-version
+export const VERSION = "0.3.0"; // x-release-please-version
 
 export interface ServerOptions {
   /** The caller may change things: with several people, their token has the write scope. */

@@ -1,6 +1,6 @@
 {
   "name": "sundhedmcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "SundhedMCP: local, read-only MCP server that lets your AI read your own sundhed.dk record (medicine card, prescriptions, test results, vaccinations, referrals) after you log in with MitID",
   "keywords": [
     "mcp",

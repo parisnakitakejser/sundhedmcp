@@ -1,6 +1,6 @@
 {
   "name": "sundhedmcp-workspace",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Workspace for SundhedMCP. The published package is packages/mcp-server.",
   "license": "MIT",
